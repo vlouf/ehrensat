@@ -181,16 +181,10 @@ def read_GPM_parallax(gpmfile, grlon, grlat, gpm_refl_threshold=17):
     gpmset.y.attrs['description'] = 'Cartesian distance along y-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
     gpmset.z.attrs['units'] = 'm'
     gpmset.z.attrs['description'] = 'Cartesian distance along z-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
-    gpmset.precip_in_gr_domain.attrs['units'] = 'bool'
-    gpmset.precip_in_gr_domain.attrs['description'] = 'GPM data-columns with precipitation inside the ground radar scope.'
     gpmset.range_from_gr.attrs['units'] = 'm'
     gpmset.range_from_gr.attrs['description'] = 'Range from satellite bins in relation to ground radar'
     gpmset.elev_from_gr.attrs['units'] = 'degrees'
     gpmset.elev_from_gr.attrs['description'] = 'Elevation from satellite bins in relation to ground radar'
-    gpmset.strat_reflectivity_grband.attrs['units'] = 'dBZ'
-    gpmset.strat_reflectivity_grband.attrs['description'] = 'Reflectivity of stratiform precipitation converted to ground radar frequency band.'
-    gpmset.conv_reflectivity_grband.attrs['units'] = 'dBZ'
-    gpmset.conv_reflectivity_grband.attrs['description'] = 'Reflectivity of convective precipitation converted to ground radar frequency band.'
     gpmset.attrs['earth_gaussian_radius'] = radius_gauss
 
     return gpmset
