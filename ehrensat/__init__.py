@@ -1,1 +1,1 @@
-from .ehrensat import read_GPM
+from .ehrensat import read_GPM, read_GPM_parallax

@@ -12,9 +12,11 @@ import re
 import datetime
 
 import h5py
+import pyproj
 import numpy as np
 import xarray as xr
 
+from . import correct
 
 def get_gpm_orbit(gpmfile):
     '''
@@ -126,3 +128,69 @@ def read_GPM(infile, refl_min_thld=17):
     dset.attrs['orbit'] = get_gpm_orbit(infile)
 
     return dset
+
+
+def read_GPM_parallax(gpmfile, grlon, grlat, gpm_refl_threshold=17):
+    '''
+    Load GPM and Ground radar files and perform some initial checks:
+    domains intersect, precipitation, time difference.
+    Parameters:
+    ----------
+    gpmfile: str
+        GPM data file.
+    grfile: str
+        Ground radar input file.
+    refl_name: str
+        Name of the reflectivity field in the ground radar data.
+    refl_min_thld: float
+        Minimum threshold applied to GPM reflectivity.
+    Returns:
+    --------
+    gpmset: xarray.Dataset
+        Dataset containing the input datas.
+    radar: pyart.core.Radar
+        Pyart radar dataset.
+    '''
+    gpmset = read_GPM(gpmfile, gpm_refl_threshold)
+
+    # Reproject satellite coordinates onto ground radar
+    georef = pyproj.Proj(f"+proj=aeqd +lon_0={grlon} +lat_0={grlat} +ellps=WGS84")
+    gpmlat = gpmset.Latitude.values
+    gpmlon = gpmset.Longitude.values
+
+    xgpm, ygpm = georef(gpmlon, gpmlat)
+    rproj_gpm = (xgpm ** 2 + ygpm ** 2) ** 0.5
+
+    sr_xp, sr_yp, z_sr = correct.correct_parallax(xgpm, ygpm, gpmset)
+
+    # Compute the elevation of the satellite bins with respect to the ground radar.
+    radius_gauss = correct.compute_gaussian_curvature(grlat)
+    gamma = np.sqrt(sr_xp ** 2 + sr_yp ** 2) / radius_gauss
+    elev_sr_grref = np.rad2deg(np.arctan2(np.cos(gamma) - radius_gauss / (radius_gauss + z_sr), np.sin(gamma)))
+
+    gpmset = gpmset.merge({'range_from_gr': (('nscan', 'nray'), rproj_gpm),
+                           'elev_from_gr': (('nscan', 'nray', 'nbin'), elev_sr_grref),
+                           'x': (('nscan', 'nray', 'nbin'), sr_xp),
+                           'y': (('nscan', 'nray', 'nbin'), sr_yp),
+                           'z': (('nscan', 'nray', 'nbin'), z_sr),
+                           })
+
+    gpmset.x.attrs['units'] = 'm'
+    gpmset.x.attrs['description'] = 'Cartesian distance along x-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
+    gpmset.y.attrs['units'] = 'm'
+    gpmset.y.attrs['description'] = 'Cartesian distance along y-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
+    gpmset.z.attrs['units'] = 'm'
+    gpmset.z.attrs['description'] = 'Cartesian distance along z-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
+    gpmset.precip_in_gr_domain.attrs['units'] = 'bool'
+    gpmset.precip_in_gr_domain.attrs['description'] = 'GPM data-columns with precipitation inside the ground radar scope.'
+    gpmset.range_from_gr.attrs['units'] = 'm'
+    gpmset.range_from_gr.attrs['description'] = 'Range from satellite bins in relation to ground radar'
+    gpmset.elev_from_gr.attrs['units'] = 'degrees'
+    gpmset.elev_from_gr.attrs['description'] = 'Elevation from satellite bins in relation to ground radar'
+    gpmset.strat_reflectivity_grband.attrs['units'] = 'dBZ'
+    gpmset.strat_reflectivity_grband.attrs['description'] = 'Reflectivity of stratiform precipitation converted to ground radar frequency band.'
+    gpmset.conv_reflectivity_grband.attrs['units'] = 'dBZ'
+    gpmset.conv_reflectivity_grband.attrs['description'] = 'Reflectivity of convective precipitation converted to ground radar frequency band.'
+    gpmset.attrs['earth_gaussian_radius'] = radius_gauss
+
+    return gpmset
