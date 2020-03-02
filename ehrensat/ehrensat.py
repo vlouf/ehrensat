@@ -170,8 +170,8 @@ def read_GPM_parallax(gpmfile, grlon, grlat, gpm_refl_threshold=17):
 
     gpmset = gpmset.merge({'range_from_gr': (('nscan', 'nray'), rproj_gpm),
                            'elev_from_gr': (('nscan', 'nray', 'nbin'), elev_sr_grref),
-                           'x': (('nscan', 'nray', 'nbin'), xgpm),
-                           'y': (('nscan', 'nray', 'nbin'), ygpm),
+                           'x': (('nscan', 'nray'), xgpm),
+                           'y': (('nscan', 'nray'), ygpm),
                            'xpx': (('nscan', 'nray', 'nbin'), sr_xp),
                            'ypx': (('nscan', 'nray', 'nbin'), sr_yp),
                            'z': (('nscan', 'nray', 'nbin'), z_sr),
