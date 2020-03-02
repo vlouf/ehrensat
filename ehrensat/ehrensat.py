@@ -37,7 +37,7 @@ def get_gpm_orbit(gpmfile):
     return int(orbit)
 
 
-def read_GPM(infile, refl_min_thld):
+def read_GPM(infile, refl_min_thld=17):
     '''
     Read GPM data and organize them into a Dataset.
     Parameters:
