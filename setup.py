@@ -17,6 +17,7 @@ AUTHOR = 'Valentin Louf'
 # What packages are required for this module to be executed?
 REQUIRED = ["h5py",
             "numpy",
+            "pyproj",
             "xarray",]
 
 here = os.path.abspath(os.path.dirname(__file__))
