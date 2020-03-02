@@ -170,15 +170,21 @@ def read_GPM_parallax(gpmfile, grlon, grlat, gpm_refl_threshold=17):
 
     gpmset = gpmset.merge({'range_from_gr': (('nscan', 'nray'), rproj_gpm),
                            'elev_from_gr': (('nscan', 'nray', 'nbin'), elev_sr_grref),
-                           'x': (('nscan', 'nray', 'nbin'), sr_xp),
-                           'y': (('nscan', 'nray', 'nbin'), sr_yp),
+                           'x': (('nscan', 'nray', 'nbin'), xgpm),
+                           'y': (('nscan', 'nray', 'nbin'), ygpm),
+                           'xpx': (('nscan', 'nray', 'nbin'), sr_xp),
+                           'ypx': (('nscan', 'nray', 'nbin'), sr_yp),
                            'z': (('nscan', 'nray', 'nbin'), z_sr),
                            })
 
     gpmset.x.attrs['units'] = 'm'
-    gpmset.x.attrs['description'] = 'Cartesian distance along x-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
+    gpmset.x.attrs['description'] = 'Cartesian distance along x-axis of satellite bin in relation to ground radar (0, 0)'
     gpmset.y.attrs['units'] = 'm'
-    gpmset.y.attrs['description'] = 'Cartesian distance along y-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
+    gpmset.y.attrs['description'] = 'Cartesian distance along y-axis of satellite bin in relation to ground radar (0, 0)'
+    gpmset.xpx.attrs['units'] = 'm'
+    gpmset.xpx.attrs['description'] = 'Cartesian distance along x-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
+    gpmset.ypx.attrs['units'] = 'm'
+    gpmset.ypx.attrs['description'] = 'Cartesian distance along y-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
     gpmset.z.attrs['units'] = 'm'
     gpmset.z.attrs['description'] = 'Cartesian distance along z-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
     gpmset.range_from_gr.attrs['units'] = 'm'
