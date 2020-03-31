@@ -4,10 +4,11 @@ volume_matching.
 @title: ehrensat
 @author: Valentin Louf <valentin.louf@bom.gov.au>
 @institutions: Monash University and the Australian Bureau of Meteorology
-@creation: 02/03/2020
+@creation: 31/03/2020
     get_gpm_orbit
     read_GPM
 '''
+import os
 import re
 import datetime
 
@@ -16,7 +17,10 @@ import pyproj
 import numpy as np
 import xarray as xr
 
-from . import correct
+
+class NoPrecipitationError(Exception):
+    pass
+
 
 def get_gpm_orbit(gpmfile):
     '''
@@ -24,6 +28,7 @@ def get_gpm_orbit(gpmfile):
     ----------
     gpmfile: str
         GPM data file.
+
     Returns:
     --------
     orbit: int
@@ -42,12 +47,14 @@ def get_gpm_orbit(gpmfile):
 def read_GPM(infile, refl_min_thld=17):
     '''
     Read GPM data and organize them into a Dataset.
+
     Parameters:
     ----------
     gpmfile: str
         GPM data file.
     refl_min_thld: float
         Minimum threshold applied to GPM reflectivity.
+
     Returns:
     --------
     dset: xr.Dataset
@@ -78,8 +85,10 @@ def read_GPM(infile, refl_min_thld=17):
                     elif sk == 'zFactorCorrected':
                         # Reverse direction along the beam.
                         data[sk] = (dims, np.ma.masked_less_equal(hid[f'/NS/{k}/{sk}'][:][:, :, ::-1], refl_min_thld))
-                    else:
+                    elif sk in ['heightBB', 'qualityBB', 'qualityTypePrecip', 'flagPrecip']:
                         data[sk] = (dims, np.ma.masked_equal(hid[f'/NS/{k}/{sk}'][:], fv))
+                    else:
+                        continue
 
     try:
         data['zFactorCorrected']
@@ -130,7 +139,7 @@ def read_GPM(infile, refl_min_thld=17):
     return dset
 
 
-def read_GPM_parallax(gpmfile, grlon, grlat, gpm_refl_threshold=17):
+def precip_in_domain(gpmset, grlon, grlat, rmax=150e3, rmin=20e3):
     '''
     Load GPM and Ground radar files and perform some initial checks:
     domains intersect, precipitation, time difference.
@@ -138,22 +147,22 @@ def read_GPM_parallax(gpmfile, grlon, grlat, gpm_refl_threshold=17):
     ----------
     gpmfile: str
         GPM data file.
-    grfile: str
-        Ground radar input file.
-    refl_name: str
-        Name of the reflectivity field in the ground radar data.
-    refl_min_thld: float
-        Minimum threshold applied to GPM reflectivity.
+    grlon: float
+        Radar longitude.
+    grlat: float
+        Radar latitude.
+    rmin : float
+        Radar minimum range (cone of silence.)
+    rmax: float
+        Radar maximum range.
+
     Returns:
     --------
-    gpmset: xarray.Dataset
-        Dataset containing the input datas.
-    radar: pyart.core.Radar
-        Pyart radar dataset.
+    nprof: float
+        Number of profile in rain.
+    gpmtime0: Timestamp
+        Time of the GPM match for radar.
     '''
-    gpmset = read_GPM(gpmfile, gpm_refl_threshold)
-
-    # Reproject satellite coordinates onto ground radar
     georef = pyproj.Proj(f"+proj=aeqd +lon_0={grlon} +lat_0={grlat} +ellps=WGS84")
     gpmlat = gpmset.Latitude.values
     gpmlon = gpmset.Longitude.values
@@ -161,36 +170,22 @@ def read_GPM_parallax(gpmfile, grlon, grlat, gpm_refl_threshold=17):
     xgpm, ygpm = georef(gpmlon, gpmlat)
     rproj_gpm = (xgpm ** 2 + ygpm ** 2) ** 0.5
 
-    sr_xp, sr_yp, z_sr = correct.correct_parallax(xgpm, ygpm, gpmset)
+    gr_domain = (rproj_gpm <= rmax) & (rproj_gpm >= rmin)
+    if gr_domain.sum() < 10:
+        info = f'The closest satellite measurement is {np.min(rproj_gpm / 1e3):0.4} km away from ground radar.'
+        if gr_domain.sum() == 0:
+            raise NoPrecipitationError('GPM swath does not go through the radar domain. ' + info)
+        else:
+            raise NoPrecipitationError('GPM swath is on the edge of the ground radar domain and there is not enough measurements inside it. ' + info)
 
-    # Compute the elevation of the satellite bins with respect to the ground radar.
-    radius_gauss = correct.compute_gaussian_curvature(grlat)
-    gamma = np.sqrt(sr_xp ** 2 + sr_yp ** 2) / radius_gauss
-    elev_sr_grref = np.rad2deg(np.arctan2(np.cos(gamma) - radius_gauss / (radius_gauss + z_sr), np.sin(gamma)))
+    nprof = np.sum(gpmset.flagPrecip.values[gr_domain])
+    if nprof < 10:
+        raise NoPrecipitationError('No precipitation measured by GPM inside radar domain.')
 
-    gpmset = gpmset.merge({'range_from_gr': (('nscan', 'nray'), rproj_gpm),
-                           'elev_from_gr': (('nscan', 'nray', 'nbin'), elev_sr_grref),
-                           'x': (('nscan', 'nray'), xgpm),
-                           'y': (('nscan', 'nray'), ygpm),
-                           'xpx': (('nscan', 'nray', 'nbin'), sr_xp),
-                           'ypx': (('nscan', 'nray', 'nbin'), sr_yp),
-                           'z': (('nscan', 'nray', 'nbin'), z_sr),
-                           })
+    newset = gpmset.merge({'range_from_gr': (('nscan', 'nray'), rproj_gpm)})
 
-    gpmset.x.attrs['units'] = 'm'
-    gpmset.x.attrs['description'] = 'Cartesian distance along x-axis of satellite bin in relation to ground radar (0, 0)'
-    gpmset.y.attrs['units'] = 'm'
-    gpmset.y.attrs['description'] = 'Cartesian distance along y-axis of satellite bin in relation to ground radar (0, 0)'
-    gpmset.xpx.attrs['units'] = 'm'
-    gpmset.xpx.attrs['description'] = 'Cartesian distance along x-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
-    gpmset.ypx.attrs['units'] = 'm'
-    gpmset.ypx.attrs['description'] = 'Cartesian distance along y-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
-    gpmset.z.attrs['units'] = 'm'
-    gpmset.z.attrs['description'] = 'Cartesian distance along z-axis of satellite bin in relation to ground radar (0, 0), parallax corrected'
-    gpmset.range_from_gr.attrs['units'] = 'm'
-    gpmset.range_from_gr.attrs['description'] = 'Range from satellite bins in relation to ground radar'
-    gpmset.elev_from_gr.attrs['units'] = 'degrees'
-    gpmset.elev_from_gr.attrs['description'] = 'Elevation from satellite bins in relation to ground radar'
-    gpmset.attrs['earth_gaussian_radius'] = radius_gauss
+    gpmtime0 = newset.nscan.where(newset.range_from_gr == newset.range_from_gr.min()).values.astype('datetime64[s]')
+    gpmtime0 = gpmtime0[~np.isnat(gpmtime0)][0]
 
-    return gpmset
+    del newset
+    return nprof, gpmtime0
